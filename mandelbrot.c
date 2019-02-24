@@ -9,12 +9,14 @@ const int SCREEN_HEIGHT = 480;
 const double SCREEN_RATIO = (double)SCREEN_HEIGHT / SCREEN_WIDTH;
 const int FPS = 30;
 const int CLOCK = 1000 / FPS;
+const int INITIAL_RESOLUTION = 1 << 4;
 
 Uint32 pixels[SCREEN_WIDTH*SCREEN_HEIGHT*4];
 SDL_Window* gWindow = NULL;
 SDL_Surface* gScreen = NULL;
 SDL_Renderer* gRenderer = NULL;
 SDL_Texture* gTexture = NULL;
+int gResolution = INITIAL_RESOLUTION;
 double gScale = 2;
 double gOffsetX = 0;
 double gOffsetY = 0;
@@ -26,6 +28,35 @@ double scaleX(int x) {
 
 double scaleY(int y) {
   return -(((double)y / SCREEN_HEIGHT * SCREEN_RATIO) - SCREEN_RATIO / 2) * gScale + gOffsetY;
+}
+
+
+void mandelbrot3(int resolution) {
+  int offset = resolution == 1 ? 0 : resolution >> 1;
+
+  for (int screenX = 0; screenX < SCREEN_WIDTH; screenX += resolution) {
+    for (int screenY = 0; screenY < SCREEN_HEIGHT; screenY += resolution) {
+      double x0 = scaleX(screenX - offset);
+      double y0 = scaleY(screenY - offset);
+      double x = 0;
+      double y = 0;
+      int iteration = 0;
+      while ((x*x + y*y <= 4) && iteration <= 0xff) {
+        double xtemp = x*x - y*y + x0;
+        y = 2*x*y + y0;
+        x = xtemp;
+        iteration++;
+      }
+      if (resolution == 1) {
+        pixels[screenY * SCREEN_WIDTH + screenX] = iteration << 8;
+      }
+      for(int rx = 0; rx < resolution; rx++) {
+        for(int ry = 0; ry < resolution; ry++) {
+          pixels[(screenY + ry) * SCREEN_WIDTH + screenX + rx] = iteration << 8;
+        }
+      }
+    }
+  }
 }
 
 void mandelbrot() {
@@ -67,19 +98,21 @@ void mandelbrot2() {
         double nu = log(logZn/log(2))/log(2);
         iteration = iteration + 1 - nu;
       }
-      pixels[screenY * SCREEN_WIDTH + screenX] = (int)floor(iteration) << 16;
+      //pixels[screenY * SCREEN_WIDTH + screenX] = (int)floor(iteration) << 16;
+      pixels[screenY * SCREEN_WIDTH + screenX] = ((int)iteration & 0x7) | ((int)iteration & 0x38) << 8 | ((int)iteration & 0x60) << 16;
     }
   }
 }
 
 int render() {
-  if(gLastScale != gScale) {
-    mandelbrot2();
+  if(gLastScale != gScale || gResolution != 0) {
+    mandelbrot3(gResolution);
     SDL_UpdateTexture(gTexture, NULL, pixels, 640 * sizeof(Uint32));
     SDL_RenderClear(gRenderer);
     SDL_RenderCopy(gRenderer, gTexture, NULL, NULL);
     SDL_RenderPresent(gRenderer);
     gLastScale = gScale;
+    gResolution >>= 1;
   }
 }
 
@@ -90,8 +123,10 @@ void event(SDL_Event* e) {
       gOffsetY = scaleY(e->motion.y);
       if (e->button.button == SDL_BUTTON_LEFT) {
         gScale *= 0.5;
+        gResolution = INITIAL_RESOLUTION;
       } else if (e->button.button == SDL_BUTTON_RIGHT) {
         gScale *= 1.5;
+        gResolution = INITIAL_RESOLUTION;
       }
       break;
     case SDL_MOUSEBUTTONDOWN:
